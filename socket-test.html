@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>CampusOne Socket Test</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #111; color: #0f0; }
+    input, button { padding: 8px; margin: 4px; font-family: monospace; font-size: 14px; }
+    #token { width: 500px; }
+    #log { margin-top: 20px; border: 1px solid #333; padding: 10px; height: 400px; overflow-y: auto; background: #000; }
+    .event { color: #0ff; }
+    .error { color: #f00; }
+    .success { color: #0f0; }
+    .info { color: #ff0; }
+    .status { padding: 8px; margin: 8px 0; border-left: 4px solid #666; background: #222; }
+    .status.connected { border-color: #0f0; }
+    .status.error { border-color: #f00; }
+  </style>
+</head>
+<body>
+  <h2>Socket.io Test Client</h2>
+
+  <div>
+    <input id="token" placeholder="Paste JWT token here" />
+    <button onclick="connect()">Connect</button>
+    <button onclick="disconnect()">Disconnect</button>
+    <button onclick="clearLog()">Clear Log</button>
+  </div>
+
+  <div id="status" class="status">Not connected</div>
+  <div id="log"></div>
+
+  <!-- Local socket.io client (served by backend) -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    let socket = null;
+    const logEl = document.getElementById("log");
+    const statusEl = document.getElementById("status");
+
+    function log(msg, cls = "") {
+      const time = new Date().toLocaleTimeString();
+      const div = document.createElement("div");
+      div.className = cls;
+      div.textContent = `[${time}] ${msg}`;
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log(msg);
+    }
+
+    function clearLog() {
+      logEl.innerHTML = "";
+    }
+
+    function setStatus(text, cls) {
+      statusEl.textContent = text;
+      statusEl.className = "status " + (cls || "");
+    }
+
+    function connect() {
+      const token = document.getElementById("token").value.trim();
+      if (!token) {
+        alert("Paste your token first");
+        return;
+      }
+
+      // Detect truncated tokens
+      if (token.includes("...")) {
+        alert("Your token contains '...' — it's truncated. Copy the FULL token from Thunder Client.");
+        return;
+      }
+
+      if (token.length < 100) {
+        alert(`Token is only ${token.length} characters — looks truncated. A valid JWT is 200+ characters.`);
+        return;
+      }
+
+      if (socket) socket.disconnect();
+
+      log("🔌 Attempting to connect...", "info");
+      setStatus("Connecting...", "");
+
+      // Check if io is loaded
+      if (typeof io === "undefined") {
+        log("❌ socket.io client not loaded! Check /socket.io/socket.io.js", "error");
+        setStatus("Failed — client script missing", "error");
+        return;
+      }
+
+      socket = io("http://localhost:5000", {
+        auth: { token },
+        transports: ["websocket", "polling"],
+      });
+
+      socket.on("connect", () => {
+        log(`✅ Connected as socket ${socket.id}`, "success");
+        setStatus(`Connected (${socket.id})`, "connected");
+      });
+
+      socket.on("connect_error", (err) => {
+        log(`❌ Connect error: ${err.message}`, "error");
+        setStatus(`Error: ${err.message}`, "error");
+      });
+
+      socket.on("disconnect", (reason) => {
+        log(`🔌 Disconnected: ${reason}`, "info");
+        setStatus("Disconnected", "");
+      });
+
+      // Listen to all events
+      const events = [
+        "task:created", "task:updated", "task:moved", "task:deleted",
+        "board:created", "board:updated", "board:archived",
+        "column:created", "column:updated", "columns:reordered", "column:deleted",
+        "member:added", "member:role_updated", "member:removed",
+        "notification",
+        "workspace:joined", "workspace:left"
+      ];
+
+      events.forEach((evt) => {
+        socket.on(evt, (payload) => {
+          log(`📩 ${evt}: ${JSON.stringify(payload).slice(0, 200)}`, "event");
+        });
+      });
+    }
+
+    function disconnect() {
+      if (socket) {
+        socket.disconnect();
+        socket = null;
+        log("🔌 Manually disconnected", "info");
+        setStatus("Disconnected", "");
+      }
+    }
+
+    // Log that script is ready
+    window.addEventListener("load", () => {
+      if (typeof io === "undefined") {
+        log("❌ socket.io client library failed to load", "error");
+      } else {
+        log("✅ socket.io client library loaded — ready to connect", "success");
+      }
+    });
+  </script>
+</body>
+</html>
